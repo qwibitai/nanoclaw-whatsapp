@@ -15,9 +15,10 @@ import makeWASocket, {
 import {
   ASSISTANT_HAS_OWN_NUMBER,
   ASSISTANT_NAME,
+  GROUPS_DIR,
   STORE_DIR,
 } from '../config.js';
-import { getLastGroupSync, setLastGroupSync, updateChatName } from '../db.js';
+import { getLastGroupSync, getRegisteredGroup, setLastGroupSync, updateChatName } from '../db.js';
 import { logger } from '../logger.js';
 import {
   Channel,
@@ -329,6 +330,16 @@ export class WhatsAppChannel implements Channel {
         if (metadata.subject) {
           updateChatName(jid, metadata.subject);
           count++;
+        }
+
+        // Sync group description → group-persona.md for per-group agent persona
+        if (metadata.desc) {
+          const group = getRegisteredGroup(jid);
+          if (group) {
+            const personaPath = path.join(GROUPS_DIR, group.folder, 'group-persona.md');
+            fs.writeFileSync(personaPath, metadata.desc, 'utf-8');
+            logger.debug({ jid, folder: group.folder }, 'Updated group-persona.md from WhatsApp description');
+          }
         }
       }
 
