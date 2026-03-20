@@ -6,6 +6,7 @@ import { EventEmitter } from 'events';
 // Mock config
 vi.mock('../config.js', () => ({
   STORE_DIR: '/tmp/nanoclaw-test-store',
+  GROUPS_DIR: '/tmp/nanoclaw-test-groups',
   ASSISTANT_NAME: 'Andy',
   ASSISTANT_HAS_OWN_NUMBER: false,
 }));
@@ -25,6 +26,7 @@ vi.mock('../db.js', () => ({
   getLastGroupSync: vi.fn(() => null),
   setLastGroupSync: vi.fn(),
   updateChatName: vi.fn(),
+  getRegisteredGroup: vi.fn(() => null),
 }));
 
 // Mock fs
@@ -36,6 +38,7 @@ vi.mock('fs', async () => {
       ...actual,
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
+      writeFileSync: vi.fn(),
     },
   };
 });
@@ -100,7 +103,8 @@ vi.mock('@whiskeysockets/baileys', () => {
 });
 
 import { WhatsAppChannel, WhatsAppChannelOpts } from './whatsapp.js';
-import { getLastGroupSync, updateChatName, setLastGroupSync } from '../db.js';
+import { getLastGroupSync, updateChatName, setLastGroupSync, getRegisteredGroup } from '../db.js';
+import fs from 'fs';
 
 // --- Test helpers ---
 
@@ -863,6 +867,105 @@ describe('WhatsAppChannel', () => {
 
       expect(updateChatName).toHaveBeenCalledTimes(1);
       expect(updateChatName).toHaveBeenCalledWith('group1@g.us', 'Has Subject');
+    });
+  });
+
+  // --- Group persona ---
+
+  describe('group persona sync', () => {
+    beforeEach(() => {
+      vi.mocked(fs.writeFileSync).mockClear();
+      vi.mocked(getRegisteredGroup).mockReset();
+    });
+
+    it('writes group-persona.md when group has description and is registered', async () => {
+      fakeSocket.groupFetchAllParticipating.mockResolvedValue({
+        'group@g.us': { subject: 'Finance', desc: 'You are a finance assistant.' },
+      });
+      vi.mocked(getRegisteredGroup).mockReturnValue({
+        jid: 'group@g.us',
+        name: 'Finance',
+        folder: 'whatsapp_finance',
+        trigger: '@Andy',
+        requiresTrigger: true,
+        isMain: false,
+        added_at: '',
+        containerConfig: undefined,
+      });
+
+      const channel = new WhatsAppChannel(createTestOpts());
+      await connectChannel(channel);
+      await channel.syncGroupMetadata(true);
+
+      expect(fs.writeFileSync).toHaveBeenCalledWith(
+        '/tmp/nanoclaw-test-groups/whatsapp_finance/group-persona.md',
+        'You are a finance assistant.',
+        'utf-8',
+      );
+    });
+
+    it('does not write group-persona.md when group has no description', async () => {
+      fakeSocket.groupFetchAllParticipating.mockResolvedValue({
+        'group@g.us': { subject: 'Finance' },
+      });
+      vi.mocked(getRegisteredGroup).mockReturnValue({
+        jid: 'group@g.us',
+        name: 'Finance',
+        folder: 'whatsapp_finance',
+        trigger: '@Andy',
+        requiresTrigger: true,
+        isMain: false,
+        added_at: '',
+        containerConfig: undefined,
+      });
+
+      const channel = new WhatsAppChannel(createTestOpts());
+      await connectChannel(channel);
+      await channel.syncGroupMetadata(true);
+
+      expect(fs.writeFileSync).not.toHaveBeenCalled();
+    });
+
+    it('does not write group-persona.md when group is not registered', async () => {
+      fakeSocket.groupFetchAllParticipating.mockResolvedValue({
+        'group@g.us': { subject: 'Finance', desc: 'You are a finance assistant.' },
+      });
+      vi.mocked(getRegisteredGroup).mockReturnValue(undefined);
+
+      const channel = new WhatsAppChannel(createTestOpts());
+      await connectChannel(channel);
+      await channel.syncGroupMetadata(true);
+
+      expect(fs.writeFileSync).not.toHaveBeenCalled();
+    });
+
+    it('writes persona files for multiple registered groups independently', async () => {
+      fakeSocket.groupFetchAllParticipating.mockResolvedValue({
+        'group1@g.us': { subject: 'Finance', desc: 'Finance assistant.' },
+        'group2@g.us': { subject: 'Travel', desc: 'Travel planner.' },
+      });
+      vi.mocked(getRegisteredGroup).mockImplementation((jid) => {
+        if (jid === 'group1@g.us') return { jid, name: 'Finance', folder: 'finance', trigger: '@Andy', requiresTrigger: true, isMain: false, added_at: '' };
+        if (jid === 'group2@g.us') return { jid, name: 'Travel', folder: 'travel', trigger: '@Andy', requiresTrigger: true, isMain: false, added_at: '' };
+        return undefined;
+      });
+
+      const channel = new WhatsAppChannel(createTestOpts());
+      await connectChannel(channel);
+      vi.mocked(fs.writeFileSync).mockClear();
+      await channel.syncGroupMetadata(true);
+
+      expect(fs.writeFileSync).toHaveBeenCalledTimes(2);
+      expect(fs.writeFileSync).toHaveBeenCalledWith(
+        '/tmp/nanoclaw-test-groups/finance/group-persona.md',
+        'Finance assistant.',
+        'utf-8',
+      );
+      expect(fs.writeFileSync).toHaveBeenCalledWith(
+        '/tmp/nanoclaw-test-groups/travel/group-persona.md',
+        'Travel planner.',
+        'utf-8',
+      );
     });
   });
 

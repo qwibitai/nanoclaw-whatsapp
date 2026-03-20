@@ -4,6 +4,7 @@ import path from 'path';
 import {
   ASSISTANT_NAME,
   CREDENTIAL_PROXY_PORT,
+  GROUPS_DIR,
   IDLE_TIMEOUT,
   POLL_INTERVAL,
   TIMEZONE,
@@ -175,7 +176,12 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (!hasTrigger) return true;
   }
 
-  const prompt = formatMessages(missedMessages, TIMEZONE);
+  const rawPrompt = formatMessages(missedMessages, TIMEZONE);
+  const personaPath = path.join(GROUPS_DIR, group.folder, 'group-persona.md');
+  const personaPrefix = fs.existsSync(personaPath)
+    ? `<group_persona>\n${fs.readFileSync(personaPath, 'utf-8').trim()}\n</group_persona>\n\n`
+    : '';
+  const prompt = personaPrefix + rawPrompt;
 
   // Advance cursor so the piping path in startMessageLoop won't re-fetch
   // these messages. Save the old cursor so we can roll back on error.
