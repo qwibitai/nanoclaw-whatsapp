@@ -192,7 +192,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   // directly via the queue, bypassing startMessageLoop where markReceived normally fires.
   // markReceived is idempotent (rejects duplicates), so this is safe for normal-path messages too.
   for (const msg of missedMessages) {
-    statusTracker.markReceived(msg.id, chatJid, false);
+    statusTracker.markReceived(msg.id, chatJid, false, msg.sender);
   }
 
   // Mark all user messages as thinking (container is spawning)
@@ -460,7 +460,7 @@ async function startMessageLoop(): Promise<void> {
           // Mark each user message as received (status emoji)
           for (const msg of groupMessages) {
             if (!msg.is_from_me && !msg.is_bot_message) {
-              statusTracker.markReceived(msg.id, chatJid, false);
+              statusTracker.markReceived(msg.id, chatJid, false, msg.sender);
             }
           }
 
