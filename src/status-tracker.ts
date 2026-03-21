@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { DATA_DIR, CONTAINER_TIMEOUT } from './config.js';
+import { readEnvFile } from './env.js';
 import { logger } from './logger.js';
 
 // DONE and FAILED share value 3: both are terminal states with monotonic
@@ -64,13 +65,18 @@ export class StatusTracker {
   private deps: StatusTrackerDeps;
   private persistPath: string;
   private _shuttingDown = false;
+  private reactionsEnabled: boolean;
 
   constructor(deps: StatusTrackerDeps) {
     this.deps = deps;
     this.persistPath = path.join(DATA_DIR, 'status-tracker.json');
+    const envCfg = readEnvFile(['STATUS_REACTIONS']);
+    const val = process.env.STATUS_REACTIONS ?? envCfg.STATUS_REACTIONS ?? '1';
+    this.reactionsEnabled = val !== '0';
   }
 
   markReceived(messageId: string, chatJid: string, fromMe: boolean): boolean {
+    if (!this.reactionsEnabled) return false;
     if (!this.deps.isMainGroup(chatJid)) return false;
     if (this.tracked.has(messageId)) return false;
 
