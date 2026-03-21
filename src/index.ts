@@ -685,11 +685,20 @@ async function main(): Promise<void> {
       if (messageId) {
         if (!channel.sendReaction)
           throw new Error('Channel does not support sendReaction');
-        const messageKey = {
+        const msgInfo = getMessageFromMe(messageId, jid);
+        const messageKey: {
+          id: string;
+          remoteJid: string;
+          fromMe: boolean;
+          participant?: string;
+        } = {
           id: messageId,
           remoteJid: jid,
-          fromMe: getMessageFromMe(messageId, jid),
+          fromMe: msgInfo.fromMe,
         };
+        if (jid.endsWith('@g.us') && msgInfo.sender) {
+          messageKey.participant = msgInfo.sender;
+        }
         await channel.sendReaction(jid, messageKey, emoji);
       } else {
         if (!channel.reactToLatestMessage)
