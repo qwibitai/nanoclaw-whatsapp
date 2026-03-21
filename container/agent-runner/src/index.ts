@@ -365,6 +365,7 @@ async function runQuery(
   // Load image attachments and send as multimodal content blocks
   if (containerInput.imageAttachments?.length) {
     const blocks: ContentBlock[] = [];
+    const originalPaths: string[] = [];
     for (const img of containerInput.imageAttachments) {
       const imgPath = path.join('/workspace/group', img.relativePath);
       try {
@@ -373,9 +374,18 @@ async function runQuery(
       } catch (err) {
         log(`Failed to load image: ${imgPath}`);
       }
+      if (img.originalRelativePath) {
+        originalPaths.push(path.join('/workspace/group', img.originalRelativePath));
+      }
     }
     if (blocks.length > 0) {
       stream.pushMultimodal(blocks);
+    }
+    if (originalPaths.length > 0) {
+      stream.push(
+        `Original high-resolution image${originalPaths.length > 1 ? 's' : ''} available at:\n` +
+          originalPaths.map((p) => `- ${p}`).join('\n'),
+      );
     }
   }
 
