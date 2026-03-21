@@ -6,6 +6,7 @@ import makeWASocket, {
   Browsers,
   DisconnectReason,
   WASocket,
+  downloadMediaMessage,
   fetchLatestWaWebVersion,
   makeCacheableSignalKeyStore,
   normalizeMessageContent,
@@ -19,6 +20,7 @@ import {
 } from '../config.js';
 import { getLastGroupSync, setLastGroupSync, updateChatName } from '../db.js';
 import { logger } from '../logger.js';
+import { resolveGroupFolderPath } from '../group-folder.js';
 import {
   Channel,
   OnInboundMessage,
@@ -28,6 +30,42 @@ import {
 import { registerChannel, ChannelOpts } from './registry.js';
 
 const GROUP_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// Map mimetype prefixes to file extensions
+const MIME_TO_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/heic': 'heic',
+  'video/mp4': 'mp4',
+  'video/3gpp': '3gp',
+  'video/quicktime': 'mov',
+  'audio/ogg': 'ogg',
+  'audio/mpeg': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/aac': 'aac',
+  'audio/wav': 'wav',
+  'application/pdf': 'pdf',
+  'application/zip': 'zip',
+  'application/x-zip-compressed': 'zip',
+  'text/plain': 'txt',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+    'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+    'pptx',
+};
+
+function extFromMime(mimetype: string | null | undefined): string {
+  if (!mimetype) return 'bin';
+  const base = mimetype.split(';')[0].trim().toLowerCase();
+  return MIME_TO_EXT[base] ?? base.split('/')[1] ?? 'bin';
+}
 
 export interface WhatsAppChannelOpts {
   onMessage: OnInboundMessage;
@@ -202,16 +240,71 @@ export class WhatsAppChannel implements Channel {
 
           // Only deliver full message for registered groups
           const groups = this.opts.registeredGroups();
-          if (groups[chatJid]) {
-            const content =
+          const group = groups[chatJid];
+          if (group) {
+            const textContent =
               normalized.conversation ||
               normalized.extendedTextMessage?.text ||
               normalized.imageMessage?.caption ||
               normalized.videoMessage?.caption ||
+              normalized.documentMessage?.caption ||
               '';
 
-            // Skip protocol messages with no text content (encryption keys, read receipts, etc.)
-            if (!content) continue;
+            // Detect and download media attachments
+            const mediaMsg =
+              normalized.imageMessage ||
+              normalized.videoMessage ||
+              normalized.audioMessage ||
+              normalized.documentMessage ||
+              normalized.stickerMessage;
+
+            let attachmentRef = '';
+            if (mediaMsg) {
+              try {
+                const groupDir = resolveGroupFolderPath(group.folder);
+                const uploadsDir = path.join(groupDir, 'uploads');
+                fs.mkdirSync(uploadsDir, { recursive: true });
+
+                const mimetype =
+                  (mediaMsg as { mimetype?: string }).mimetype ?? null;
+                const originalFilename =
+                  (normalized.documentMessage?.fileName as
+                    | string
+                    | undefined) ?? null;
+                const ext = originalFilename
+                  ? path.extname(originalFilename).replace(/^\./, '') ||
+                    extFromMime(mimetype)
+                  : extFromMime(mimetype);
+                const msgId = msg.key.id ?? Date.now().toString();
+                const basename = originalFilename
+                  ? `${msgId}_${path.basename(originalFilename)}`
+                  : `${msgId}.${ext}`;
+                const filePath = path.join(uploadsDir, basename);
+
+                const buffer = await downloadMediaMessage(
+                  msg,
+                  'buffer',
+                  {},
+                  { logger, reuploadRequest: this.sock.updateMediaMessage },
+                );
+                fs.writeFileSync(filePath, buffer as Buffer);
+
+                // Container sees this path as /workspace/group/uploads/{basename}
+                const containerPath = `/workspace/group/uploads/${basename}`;
+                attachmentRef = ` [attachment: ${containerPath}]`;
+                logger.info(
+                  { basename, mimetype, chatJid },
+                  'Media file saved to uploads',
+                );
+              } catch (err) {
+                logger.warn({ err, chatJid }, 'Failed to download media');
+              }
+            }
+
+            const content = textContent + attachmentRef;
+
+            // Skip protocol messages with no text content and no attachment
+            if (!content.trim()) continue;
 
             const sender = msg.key.participant || msg.key.remoteJid || '';
             const senderName = msg.pushName || sender.split('@')[0];
