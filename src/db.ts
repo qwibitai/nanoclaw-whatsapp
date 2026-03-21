@@ -363,48 +363,64 @@ export function getMessagesSince(
     .all(chatJid, sinceTimestamp, `${botPrefix}:%`) as NewMessage[];
 }
 
-export function getMessageFromMe(messageId: string, chatJid: string): boolean {
+export function getMessageFromMe(
+  messageId: string,
+  chatJid: string,
+): { fromMe: boolean; sender: string | null } {
   const row = db
-    .prepare(`SELECT is_from_me FROM messages WHERE id = ? AND chat_jid = ? LIMIT 1`)
-    .get(messageId, chatJid) as { is_from_me: number | null } | undefined;
-  return row?.is_from_me === 1;
+    .prepare(
+      `SELECT is_from_me, sender FROM messages WHERE id = ? AND chat_jid = ? LIMIT 1`,
+    )
+    .get(messageId, chatJid) as
+    | { is_from_me: number | null; sender: string | null }
+    | undefined;
+  return {
+    fromMe: row?.is_from_me === 1,
+    sender: row?.sender ?? null,
+  };
 }
 
-export function getLatestMessage(chatJid: string): { id: string; fromMe: boolean } | undefined {
+export function getLatestMessage(
+  chatJid: string,
+): { id: string; fromMe: boolean; sender: string | null } | undefined {
   const row = db
-    .prepare(`SELECT id, is_from_me FROM messages WHERE chat_jid = ? ORDER BY timestamp DESC LIMIT 1`)
-    .get(chatJid) as { id: string; is_from_me: number | null } | undefined;
+    .prepare(
+      `SELECT id, is_from_me, sender FROM messages WHERE chat_jid = ? ORDER BY timestamp DESC LIMIT 1`,
+    )
+    .get(chatJid) as
+    | { id: string; is_from_me: number | null; sender: string | null }
+    | undefined;
   if (!row) return undefined;
-  return { id: row.id, fromMe: row.is_from_me === 1 };
+  return { id: row.id, fromMe: row.is_from_me === 1, sender: row.sender };
 }
 
 export function storeReaction(reaction: Reaction): void {
   if (!reaction.emoji) {
     db.prepare(
-      `DELETE FROM reactions WHERE message_id = ? AND message_chat_jid = ? AND reactor_jid = ?`
+      `DELETE FROM reactions WHERE message_id = ? AND message_chat_jid = ? AND reactor_jid = ?`,
     ).run(reaction.message_id, reaction.message_chat_jid, reaction.reactor_jid);
     return;
   }
   db.prepare(
     `INSERT OR REPLACE INTO reactions (message_id, message_chat_jid, reactor_jid, reactor_name, emoji, timestamp)
-     VALUES (?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(
     reaction.message_id,
     reaction.message_chat_jid,
     reaction.reactor_jid,
     reaction.reactor_name || null,
     reaction.emoji,
-    reaction.timestamp
+    reaction.timestamp,
   );
 }
 
 export function getReactionsForMessage(
   messageId: string,
-  chatJid: string
+  chatJid: string,
 ): Reaction[] {
   return db
     .prepare(
-      `SELECT * FROM reactions WHERE message_id = ? AND message_chat_jid = ? ORDER BY timestamp`
+      `SELECT * FROM reactions WHERE message_id = ? AND message_chat_jid = ? ORDER BY timestamp`,
     )
     .all(messageId, chatJid) as Reaction[];
 }
@@ -412,8 +428,10 @@ export function getReactionsForMessage(
 export function getMessagesByReaction(
   reactorJid: string,
   emoji: string,
-  chatJid?: string
-): Array<Reaction & { content: string; sender_name: string; message_timestamp: string }> {
+  chatJid?: string,
+): Array<
+  Reaction & { content: string; sender_name: string; message_timestamp: string }
+> {
   const sql = chatJid
     ? `
       SELECT r.*, m.content, m.sender_name, m.timestamp as message_timestamp
@@ -430,7 +448,11 @@ export function getMessagesByReaction(
       ORDER BY r.timestamp DESC
     `;
 
-  type Result = Reaction & { content: string; sender_name: string; message_timestamp: string };
+  type Result = Reaction & {
+    content: string;
+    sender_name: string;
+    message_timestamp: string;
+  };
   return chatJid
     ? (db.prepare(sql).all(reactorJid, emoji, chatJid) as Result[])
     : (db.prepare(sql).all(reactorJid, emoji) as Result[]);
@@ -438,11 +460,11 @@ export function getMessagesByReaction(
 
 export function getReactionsByUser(
   reactorJid: string,
-  limit: number = 50
+  limit: number = 50,
 ): Reaction[] {
   return db
     .prepare(
-      `SELECT * FROM reactions WHERE reactor_jid = ? ORDER BY timestamp DESC LIMIT ?`
+      `SELECT * FROM reactions WHERE reactor_jid = ? ORDER BY timestamp DESC LIMIT ?`,
     )
     .all(reactorJid, limit) as Reaction[];
 }

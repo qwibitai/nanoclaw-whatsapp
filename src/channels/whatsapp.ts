@@ -333,11 +333,20 @@ export class WhatsAppChannel implements Channel {
     if (!latest) {
       throw new Error(`No messages found for chat ${chatJid}`);
     }
-    const messageKey = {
+    const isGroup = chatJid.endsWith('@g.us');
+    const messageKey: {
+      id: string;
+      remoteJid: string;
+      fromMe: boolean;
+      participant?: string;
+    } = {
       id: latest.id,
       remoteJid: chatJid,
       fromMe: latest.fromMe,
     };
+    if (isGroup && latest.sender) {
+      messageKey.participant = latest.sender;
+    }
     await this.sendReaction(chatJid, messageKey, emoji);
   }
 
