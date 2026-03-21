@@ -203,7 +203,7 @@ export class WhatsAppChannel implements Channel {
           // Only deliver full message for registered groups
           const groups = this.opts.registeredGroups();
           if (groups[chatJid]) {
-            const content =
+            let content =
               normalized.conversation ||
               normalized.extendedTextMessage?.text ||
               normalized.imageMessage?.caption ||
@@ -213,7 +213,20 @@ export class WhatsAppChannel implements Channel {
             // Skip protocol messages with no text content (encryption keys, read receipts, etc.)
             if (!content) continue;
 
-            const sender = msg.key.participant || msg.key.remoteJid || '';
+            // WhatsApp replaces @mentions with the user's internal LID/phone number.
+            // Translate bot mentions back to @AssistantName so trigger patterns match.
+            if (this.sock.user) {
+              const phoneUser = this.sock.user.id.split(':')[0];
+              const lidUser = this.sock.user.lid?.split(':')[0];
+              const mentionPattern = new RegExp(
+                `@(${phoneUser}${lidUser ? '|' + lidUser : ''})\\b`,
+                'g',
+              );
+              content = content.replace(mentionPattern, `@${ASSISTANT_NAME}`);
+            }
+
+            const rawSender = msg.key.participant || msg.key.remoteJid || '';
+            const sender = await this.translateJid(rawSender);
             const senderName = msg.pushName || sender.split('@')[0];
 
             const fromMe = msg.key.fromMe || false;
