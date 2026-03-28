@@ -29,6 +29,21 @@ import {
 } from '../types.js';
 import { registerChannel, ChannelOpts } from './registry.js';
 
+// Baileys expects a pino-compatible ILogger with level, child(), and trace().
+// The built-in logger doesn't have these, so we create a thin adapter.
+const baileysLogger = {
+  ...logger,
+  level: 'warn' as string,
+  trace: (dataOrMsg: Record<string, unknown> | string, msg?: string) => {
+    if (msg !== undefined) {
+      logger.debug(dataOrMsg as Record<string, unknown>, msg);
+    } else {
+      logger.debug(dataOrMsg as string);
+    }
+  },
+  child: () => baileysLogger,
+} as Parameters<typeof makeWASocket>[0]['logger'];
+
 const GROUP_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export interface WhatsAppChannelOpts {
@@ -80,10 +95,10 @@ export class WhatsAppChannel implements Channel {
       version,
       auth: {
         creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, logger),
+        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
       },
       printQRInTerminal: false,
-      logger,
+      logger: baileysLogger,
       browser: Browsers.macOS('Chrome'),
       getMessage: async (key: WAMessageKey) => {
         const cached = this.sentMessageCache.get(key.id || '');
