@@ -154,7 +154,12 @@ export class StatusTracker {
     try {
       if (fs.existsSync(this.persistPath)) {
         const raw = fs.readFileSync(this.persistPath, 'utf-8');
-        entries = JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+          logger.warn('Status tracker persistence file is not an array, ignoring');
+          return;
+        }
+        entries = parsed;
       }
     } catch (err) {
       logger.warn({ err }, 'Failed to read status tracker persistence file');

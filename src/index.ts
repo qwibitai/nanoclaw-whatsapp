@@ -32,6 +32,7 @@ import {
   getAllSessions,
   getAllTasks,
   getMessageFromMe,
+  getMessageSender,
   getMessagesSince,
   getNewMessages,
   getRouterState,
@@ -685,10 +686,18 @@ async function main(): Promise<void> {
       if (messageId) {
         if (!channel.sendReaction)
           throw new Error('Channel does not support sendReaction');
+        const fromMe = getMessageFromMe(messageId, jid);
+        // For group messages not sent by us, include participant (original sender)
+        // so Baileys can find the correct message to react to.
+        const participant =
+          !fromMe && jid.endsWith('@g.us')
+            ? getMessageSender(messageId, jid)
+            : undefined;
         const messageKey = {
           id: messageId,
           remoteJid: jid,
-          fromMe: getMessageFromMe(messageId, jid),
+          fromMe,
+          ...(participant ? { participant } : {}),
         };
         await channel.sendReaction(jid, messageKey, emoji);
       } else {

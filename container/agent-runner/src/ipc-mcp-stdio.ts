@@ -215,8 +215,10 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
     const targetJid =
       isMain && args.target_group_jid ? args.target_group_jid : chatJid;
 
+    const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const data = {
       type: 'schedule_task',
+      taskId,
       prompt: args.prompt,
       schedule_type: args.schedule_type,
       schedule_value: args.schedule_value,
@@ -226,13 +228,13 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
       timestamp: new Date().toISOString(),
     };
 
-    const filename = writeIpcFile(TASKS_DIR, data);
+    writeIpcFile(TASKS_DIR, data);
 
     return {
       content: [
         {
           type: 'text' as const,
-          text: `Task scheduled (${filename}): ${args.schedule_type} - ${args.schedule_value}`,
+          text: `Task ${taskId} scheduled: ${args.schedule_type} - ${args.schedule_value}`,
         },
       ],
     };

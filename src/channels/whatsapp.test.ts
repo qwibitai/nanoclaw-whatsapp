@@ -90,6 +90,7 @@ vi.mock('@whiskeysockets/baileys', () => {
     fetchLatestWaWebVersion: vi
       .fn()
       .mockResolvedValue({ version: [2, 3000, 0] }),
+    normalizeMessageContent: vi.fn((msg: unknown) => msg),
     makeCacheableSignalKeyStore: vi.fn((keys: unknown) => keys),
     useMultiFileAuthState: vi.fn().mockResolvedValue({
       state: {
