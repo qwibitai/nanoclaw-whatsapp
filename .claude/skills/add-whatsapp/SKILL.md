@@ -40,7 +40,7 @@ Otherwise (macOS, desktop Linux, or WSL) → AskUserQuestion: How do you want to
 
 If they chose pairing code:
 
-AskUserQuestion: What is your phone number? (Include country code without +, e.g., 1234567890)
+AskUserQuestion: What is your phone number? (Digits only — country code followed by your 10-digit number, no + prefix, spaces, or dashes. Example: 14155551234 where 1 is the US country code and 4155551234 is the phone number.)
 
 ## Phase 2: Apply Code Changes
 
@@ -186,6 +186,8 @@ AskUserQuestion: Is this a shared phone number (personal WhatsApp) or a dedicate
 - **Shared number** - Your personal WhatsApp number (recommended: use self-chat or a solo group)
 - **Dedicated number** - A separate phone/SIM for the assistant
 
+Remember the user's choice — if **dedicated number**, pass `--dedicated-number` to the register step below.
+
 AskUserQuestion: What trigger word should activate the assistant?
 - **@Andy** - Default trigger
 - **@Claw** - Short and easy
@@ -238,7 +240,8 @@ npx tsx setup/index.ts --step register \
   --channel whatsapp \
   --assistant-name "<name>" \
   --is-main \
-  --no-trigger-required  # Only for main/self-chat
+  --no-trigger-required \  # Only for main/self-chat
+  --dedicated-number       # Only if user chose dedicated number
 ```
 
 For additional groups (trigger-required):
@@ -308,7 +311,7 @@ rm -rf store/auth/ && npx tsx src/whatsapp-auth.ts --pairing-code --phone <phone
 ```
 
 Enter the code **immediately** when it appears. Also ensure:
-1. Phone number includes country code without `+` (e.g., `1234567890`)
+1. Phone number is digits only — country code + number, no `+` prefix (e.g., `14155551234` where `1` is country code, `4155551234` is the number)
 2. Phone has internet access
 3. WhatsApp is updated to the latest version
 

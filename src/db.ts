@@ -116,6 +116,13 @@ function createSchema(database: Database.Database): void {
     /* column already exists */
   }
 
+  // Add script column if it doesn't exist (migration for existing DBs)
+  try {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN script TEXT`);
+  } catch {
+    /* column already exists */
+  }
+
   // Add is_bot_message column if it doesn't exist (migration for existing DBs)
   try {
     database.exec(
@@ -144,7 +151,7 @@ function createSchema(database: Database.Database): void {
       `UPDATE chats SET channel = 'discord', is_group = 1 WHERE jid LIKE 'dc:%'`,
     );
     database.exec(
-      `UPDATE chats SET channel = 'telegram', is_group = 1 WHERE jid LIKE 'tg:%'`,
+      `UPDATE chats SET channel = 'telegram', is_group = 0 WHERE jid LIKE 'tg:%'`,
     );
   } catch {
     /* columns already exist */
@@ -166,6 +173,11 @@ export function initDatabase(): void {
 export function _initTestDatabase(): void {
   db = new Database(':memory:');
   createSchema(db);
+}
+
+/** @internal - for tests only. */
+export function _closeDatabase(): void {
+  db.close();
 }
 
 /**
@@ -373,23 +385,34 @@ export function getMessagesSince(
     .all(chatJid, sinceTimestamp, `${botPrefix}:%`, limit) as NewMessage[];
 }
 
-export function getMessageSender(messageId: string, chatJid: string): string | undefined {
+export function getMessageSender(
+  messageId: string,
+  chatJid: string,
+): string | undefined {
   const row = db
-    .prepare(`SELECT sender FROM messages WHERE id = ? AND chat_jid = ? LIMIT 1`)
+    .prepare(
+      `SELECT sender FROM messages WHERE id = ? AND chat_jid = ? LIMIT 1`,
+    )
     .get(messageId, chatJid) as { sender: string } | undefined;
   return row?.sender;
 }
 
 export function getMessageFromMe(messageId: string, chatJid: string): boolean {
   const row = db
-    .prepare(`SELECT is_from_me FROM messages WHERE id = ? AND chat_jid = ? LIMIT 1`)
+    .prepare(
+      `SELECT is_from_me FROM messages WHERE id = ? AND chat_jid = ? LIMIT 1`,
+    )
     .get(messageId, chatJid) as { is_from_me: number | null } | undefined;
   return row?.is_from_me === 1;
 }
 
-export function getLatestMessage(chatJid: string): { id: string; fromMe: boolean } | undefined {
+export function getLatestMessage(
+  chatJid: string,
+): { id: string; fromMe: boolean } | undefined {
   const row = db
-    .prepare(`SELECT id, is_from_me FROM messages WHERE chat_jid = ? ORDER BY timestamp DESC LIMIT 1`)
+    .prepare(
+      `SELECT id, is_from_me FROM messages WHERE chat_jid = ? ORDER BY timestamp DESC LIMIT 1`,
+    )
     .get(chatJid) as { id: string; is_from_me: number | null } | undefined;
   if (!row) return undefined;
   return { id: row.id, fromMe: row.is_from_me === 1 };
@@ -398,30 +421,30 @@ export function getLatestMessage(chatJid: string): { id: string; fromMe: boolean
 export function storeReaction(reaction: Reaction): void {
   if (!reaction.emoji) {
     db.prepare(
-      `DELETE FROM reactions WHERE message_id = ? AND message_chat_jid = ? AND reactor_jid = ?`
+      `DELETE FROM reactions WHERE message_id = ? AND message_chat_jid = ? AND reactor_jid = ?`,
     ).run(reaction.message_id, reaction.message_chat_jid, reaction.reactor_jid);
     return;
   }
   db.prepare(
     `INSERT OR REPLACE INTO reactions (message_id, message_chat_jid, reactor_jid, reactor_name, emoji, timestamp)
-     VALUES (?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(
     reaction.message_id,
     reaction.message_chat_jid,
     reaction.reactor_jid,
     reaction.reactor_name || null,
     reaction.emoji,
-    reaction.timestamp
+    reaction.timestamp,
   );
 }
 
 export function getReactionsForMessage(
   messageId: string,
-  chatJid: string
+  chatJid: string,
 ): Reaction[] {
   return db
     .prepare(
-      `SELECT * FROM reactions WHERE message_id = ? AND message_chat_jid = ? ORDER BY timestamp`
+      `SELECT * FROM reactions WHERE message_id = ? AND message_chat_jid = ? ORDER BY timestamp`,
     )
     .all(messageId, chatJid) as Reaction[];
 }
@@ -429,8 +452,10 @@ export function getReactionsForMessage(
 export function getMessagesByReaction(
   reactorJid: string,
   emoji: string,
-  chatJid?: string
-): Array<Reaction & { content: string; sender_name: string; message_timestamp: string }> {
+  chatJid?: string,
+): Array<
+  Reaction & { content: string; sender_name: string; message_timestamp: string }
+> {
   const sql = chatJid
     ? `
       SELECT r.*, m.content, m.sender_name, m.timestamp as message_timestamp
@@ -447,7 +472,11 @@ export function getMessagesByReaction(
       ORDER BY r.timestamp DESC
     `;
 
-  type Result = Reaction & { content: string; sender_name: string; message_timestamp: string };
+  type Result = Reaction & {
+    content: string;
+    sender_name: string;
+    message_timestamp: string;
+  };
   return chatJid
     ? (db.prepare(sql).all(reactorJid, emoji, chatJid) as Result[])
     : (db.prepare(sql).all(reactorJid, emoji) as Result[]);
@@ -455,11 +484,11 @@ export function getMessagesByReaction(
 
 export function getReactionsByUser(
   reactorJid: string,
-  limit: number = 50
+  limit: number = 50,
 ): Reaction[] {
   return db
     .prepare(
-      `SELECT * FROM reactions WHERE reactor_jid = ? ORDER BY timestamp DESC LIMIT ?`
+      `SELECT * FROM reactions WHERE reactor_jid = ? ORDER BY timestamp DESC LIMIT ?`,
     )
     .all(reactorJid, limit) as Reaction[];
 }
@@ -489,19 +518,43 @@ export function getReactionStats(chatJid?: string): Array<{
     : (db.prepare(sql).all() as Result[]);
 }
 
+export function getLastBotMessageTimestamp(
+  chatJid: string,
+  botPrefix: string,
+): string | undefined {
+  const row = db
+    .prepare(
+      `SELECT MAX(timestamp) as ts FROM messages
+       WHERE chat_jid = ? AND (is_bot_message = 1 OR content LIKE ?)`,
+    )
+    .get(chatJid, `${botPrefix}:%`) as { ts: string | null } | undefined;
+  return row?.ts ?? undefined;
+}
+
+export function getMessageContentById(
+  id: string,
+  chatJid: string,
+): string | undefined {
+  const row = db
+    .prepare(`SELECT content FROM messages WHERE id = ? AND chat_jid = ?`)
+    .get(id, chatJid) as { content: string } | undefined;
+  return row?.content;
+}
+
 export function createTask(
   task: Omit<ScheduledTask, 'last_run' | 'last_result'>,
 ): void {
   db.prepare(
     `
-    INSERT INTO scheduled_tasks (id, group_folder, chat_jid, prompt, schedule_type, schedule_value, context_mode, next_run, status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO scheduled_tasks (id, group_folder, chat_jid, prompt, script, schedule_type, schedule_value, context_mode, next_run, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     task.id,
     task.group_folder,
     task.chat_jid,
     task.prompt,
+    task.script || null,
     task.schedule_type,
     task.schedule_value,
     task.context_mode || 'isolated',
@@ -536,7 +589,12 @@ export function updateTask(
   updates: Partial<
     Pick<
       ScheduledTask,
-      'prompt' | 'schedule_type' | 'schedule_value' | 'next_run' | 'status'
+      | 'prompt'
+      | 'script'
+      | 'schedule_type'
+      | 'schedule_value'
+      | 'next_run'
+      | 'status'
     >
   >,
 ): void {
@@ -546,6 +604,10 @@ export function updateTask(
   if (updates.prompt !== undefined) {
     fields.push('prompt = ?');
     values.push(updates.prompt);
+  }
+  if (updates.script !== undefined) {
+    fields.push('script = ?');
+    values.push(updates.script || null);
   }
   if (updates.schedule_type !== undefined) {
     fields.push('schedule_type = ?');

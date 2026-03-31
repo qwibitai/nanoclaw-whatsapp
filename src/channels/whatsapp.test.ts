@@ -25,6 +25,7 @@ vi.mock('../db.js', () => ({
   getLastGroupSync: vi.fn(() => null),
   getLatestMessage: vi.fn(() => undefined),
   getMessageFromMe: vi.fn(() => false),
+  getMessageContentById: vi.fn(() => undefined),
   setLastGroupSync: vi.fn(),
   storeReaction: vi.fn(),
   updateChatName: vi.fn(),
@@ -77,6 +78,7 @@ let fakeSocket: ReturnType<typeof createFakeSocket>;
 vi.mock('@whiskeysockets/baileys', () => {
   return {
     default: vi.fn(() => fakeSocket),
+    makeWASocket: vi.fn(() => fakeSocket),
     Browsers: { macOS: vi.fn(() => ['macOS', 'Chrome', '']) },
     DisconnectReason: {
       loggedOut: 401,
