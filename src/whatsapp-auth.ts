@@ -20,7 +20,6 @@ import {
   fetchLatestWaWebVersion,
   makeCacheableSignalKeyStore,
   useMultiFileAuthState,
-  proto,
 } from '@whiskeysockets/baileys';
 
 // Fix Baileys 6.x bug: getPlatformId sends charCode (49) instead of enum value (1).
@@ -32,6 +31,7 @@ const _require = createRequire(import.meta.url);
 const _generics = _require(
   '@whiskeysockets/baileys/lib/Utils/generics',
 ) as Record<string, unknown>;
+const { proto } = _require('@whiskeysockets/baileys') as { proto: any };
 _generics.getPlatformId = (browser: string): string => {
   const platformType =
     proto.DeviceProps.PlatformType[
