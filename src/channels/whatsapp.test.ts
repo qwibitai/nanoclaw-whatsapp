@@ -167,6 +167,21 @@ describe('WhatsAppChannel', () => {
     return p;
   }
 
+  // --- Notification suppression ---
+
+  describe('notification suppression', () => {
+    it('passes markOnlineOnConnect: false to makeWASocket', async () => {
+      const opts = createTestOpts();
+      const channel = new WhatsAppChannel(opts);
+      await connectChannel(channel);
+
+      const { makeWASocket } = await import('@whiskeysockets/baileys');
+      expect(makeWASocket).toHaveBeenCalledWith(
+        expect.objectContaining({ markOnlineOnConnect: false }),
+      );
+    });
+  });
+
   // --- Version fetch ---
 
   describe('version fetch', () => {
