@@ -330,8 +330,13 @@ export class WhatsAppChannel implements Channel {
             let replyToContent: string | undefined;
             let replyToSenderName: string | undefined;
 
-            if (contextInfo?.stanzaId && contextInfo?.quotedMessage) {
+            // Set reply ID whenever stanzaId is present, even without
+            // a quoted payload (the router can render reply_to alone).
+            if (contextInfo?.stanzaId) {
               replyToMessageId = contextInfo.stanzaId;
+            }
+
+            if (contextInfo?.stanzaId && contextInfo?.quotedMessage) {
               const quotedNorm =
                 normalizeMessageContent(contextInfo.quotedMessage) ||
                 contextInfo.quotedMessage;
@@ -341,8 +346,12 @@ export class WhatsAppChannel implements Channel {
                 quotedNorm?.imageMessage?.caption ||
                 quotedNorm?.videoMessage?.caption ||
                 '';
-              // Resolve sender name for the quoted message
-              const quotedParticipant = contextInfo.participant || '';
+              // Resolve sender name for the quoted message.
+              // In groups, participant identifies who sent the quoted msg.
+              // In DMs, participant is empty — fall back to the chat JID
+              // (the other party) so the router can still emit <quoted_message>.
+              const quotedParticipant =
+                contextInfo.participant || chatJid || '';
               if (quotedParticipant) {
                 let resolvedParticipant = quotedParticipant;
                 if (resolvedParticipant.endsWith('@lid')) {
