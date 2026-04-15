@@ -6,6 +6,7 @@ import {
   makeWASocket,
   Browsers,
   DisconnectReason,
+  downloadMediaMessage,
   fetchLatestWaWebVersion,
   makeCacheableSignalKeyStore,
   normalizeMessageContent,
@@ -26,6 +27,7 @@ const { proto } = createRequire(import.meta.url)('@whiskeysockets/baileys') as {
 import {
   ASSISTANT_HAS_OWN_NUMBER,
   ASSISTANT_NAME,
+  GROUPS_DIR,
   STORE_DIR,
 } from '../config.js';
 import {
@@ -298,6 +300,63 @@ export class WhatsAppChannel implements Channel {
               );
             }
 
+            // Generic document attachment handling
+            if (normalized?.documentMessage) {
+              const docMime = normalized.documentMessage.mimetype || '';
+              try {
+                const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                const groupDir = path.join(GROUPS_DIR, groups[chatJid].folder);
+                const attachDir = path.join(groupDir, 'attachments');
+                fs.mkdirSync(attachDir, { recursive: true });
+                const filename = path.basename(
+                  normalized.documentMessage.fileName || `doc-${Date.now()}`,
+                );
+                const filePath = path.join(attachDir, filename);
+                fs.writeFileSync(filePath, buffer as Buffer);
+                const sizeKB = Math.round((buffer as Buffer).length / 1024);
+                const fileRef = `[File: attachments/${filename} (${sizeKB}KB)]\nThe file has been saved. Read it with: cat attachments/${filename}`;
+                const caption = normalized.documentMessage.caption || '';
+                content = caption ? `${caption}\n\n${fileRef}` : fileRef;
+                logger.info(
+                  { jid: chatJid, filename, mime: docMime },
+                  'Downloaded document attachment',
+                );
+              } catch (err) {
+                logger.warn(
+                  { err, jid: chatJid },
+                  'Failed to download document attachment',
+                );
+              }
+            }
+
+            // GIF / video attachment handling
+            if (normalized?.videoMessage) {
+              try {
+                const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                const groupDir = path.join(GROUPS_DIR, groups[chatJid].folder);
+                const attachDir = path.join(groupDir, 'attachments');
+                fs.mkdirSync(attachDir, { recursive: true });
+                const isGif = normalized.videoMessage.gifPlayback === true;
+                const filename = `video-${Date.now()}.mp4`;
+                const filePath = path.join(attachDir, filename);
+                fs.writeFileSync(filePath, buffer as Buffer);
+                const sizeKB = Math.round((buffer as Buffer).length / 1024);
+                const label = isGif ? 'GIF' : 'Video';
+                const fileRef = `[${label}: attachments/${filename} (${sizeKB}KB)]`;
+                const caption = normalized.videoMessage.caption || '';
+                content = caption ? `${caption}\n\n${fileRef}` : fileRef;
+                logger.info(
+                  { jid: chatJid, filename, isGif },
+                  'Downloaded video/GIF attachment',
+                );
+              } catch (err) {
+                logger.warn(
+                  { err, jid: chatJid },
+                  'Failed to download video/GIF attachment',
+                );
+              }
+            }
+
             // Skip protocol messages with no text content (encryption keys, read receipts, etc.)
             if (!content) continue;
 
@@ -379,6 +438,65 @@ export class WhatsAppChannel implements Channel {
         { jid, err, queueSize: this.outgoingQueue.length },
         'Failed to send, message queued',
       );
+    }
+  }
+
+  async sendFile(
+    jid: string,
+    filePath: string,
+    fileName: string,
+    caption?: string,
+  ): Promise<void> {
+    if (!this.connected) {
+      logger.warn({ jid, fileName }, 'Cannot send file - not connected');
+      throw new Error('Not connected to WhatsApp');
+    }
+
+    const buffer = fs.readFileSync(filePath);
+    const ext = path.extname(fileName).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.pdf': 'application/pdf',
+      '.doc': 'application/msword',
+      '.docx':
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls': 'application/vnd.ms-excel',
+      '.xlsx':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.csv': 'text/csv',
+      '.txt': 'text/plain',
+      '.html': 'text/html',
+      '.htm': 'text/html',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.mp4': 'video/mp4',
+      '.zip': 'application/zip',
+    };
+    const mimetype = mimeTypes[ext] || 'application/octet-stream';
+
+    try {
+      // Send GIFs and MP4s as video with gifPlayback so they render inline
+      if (ext === '.gif' || ext === '.mp4') {
+        await this.sock.sendMessage(jid, {
+          video: buffer,
+          gifPlayback: true,
+          ...(caption ? { caption } : {}),
+        });
+        logger.info({ jid, fileName, size: buffer.length }, 'GIF/video sent');
+        return;
+      }
+
+      await this.sock.sendMessage(jid, {
+        document: buffer,
+        mimetype,
+        fileName,
+        ...(caption ? { caption } : {}),
+      });
+      logger.info({ jid, fileName, size: buffer.length }, 'File sent');
+    } catch (err) {
+      logger.error({ jid, fileName, err }, 'Failed to send file');
+      throw err;
     }
   }
 
