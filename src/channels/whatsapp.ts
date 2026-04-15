@@ -300,9 +300,12 @@ export class WhatsAppChannel implements Channel {
               );
             }
 
-            // Generic document attachment handling
-            if (normalized?.documentMessage) {
-              const docMime = normalized.documentMessage.mimetype || '';
+            // Generic document attachment handling (skip PDFs — handled by add-pdf-reader skill)
+            const docMime = normalized?.documentMessage?.mimetype || '';
+            if (
+              normalized?.documentMessage &&
+              docMime !== 'application/pdf'
+            ) {
               try {
                 const buffer = await downloadMediaMessage(msg, 'buffer', {});
                 const groupDir = path.join(GROUPS_DIR, groups[chatJid].folder);

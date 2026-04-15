@@ -44,7 +44,7 @@ This merges in changes to `src/channels/whatsapp.ts`:
 
 **Inbound:**
 - GIF/video download: detects `videoMessage`, downloads media, saves as `.mp4`, labels as `[GIF]` or `[Video]` based on `gifPlayback` flag
-- Generic document catch-all: downloads any document type (`.csv`, `.json`, `.docx`, etc.) and saves to workspace
+- Generic document catch-all: downloads any document type (`.csv`, `.json`, `.docx`, etc.) and saves to workspace. Skips PDFs to avoid conflicts with `/add-pdf-reader`
 
 **Outbound:**
 - `sendFile()` method with mime type mapping for common file types
