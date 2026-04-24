@@ -313,6 +313,54 @@ export class WhatsAppChannel implements Channel {
               ? fromMe
               : content.startsWith(`${ASSISTANT_NAME}:`);
 
+            // Extract quoted message context (reply-to)
+            const contextInfo =
+              normalized.extendedTextMessage?.contextInfo ||
+              normalized.imageMessage?.contextInfo ||
+              normalized.videoMessage?.contextInfo ||
+              normalized.documentMessage?.contextInfo ||
+              normalized.audioMessage?.contextInfo ||
+              null;
+
+            let replyToMessageId: string | undefined;
+            let replyToContent: string | undefined;
+            let replyToSenderName: string | undefined;
+
+            // Set reply ID whenever stanzaId is present, even without
+            // a quoted payload (the router can render reply_to alone).
+            if (contextInfo?.stanzaId) {
+              replyToMessageId = contextInfo.stanzaId;
+            }
+
+            if (contextInfo?.stanzaId && contextInfo?.quotedMessage) {
+              const quotedNorm =
+                normalizeMessageContent(contextInfo.quotedMessage) ||
+                contextInfo.quotedMessage;
+              replyToContent =
+                quotedNorm?.conversation ||
+                quotedNorm?.extendedTextMessage?.text ||
+                quotedNorm?.imageMessage?.caption ||
+                quotedNorm?.videoMessage?.caption ||
+                '';
+              // Resolve sender name for the quoted message.
+              // In groups, participant identifies who sent the quoted msg.
+              // In DMs, participant is empty — fall back to the chat JID
+              // (the other party) so the router can still emit <quoted_message>.
+              const quotedParticipant =
+                contextInfo.participant || chatJid || '';
+              if (quotedParticipant) {
+                let resolvedParticipant = quotedParticipant;
+                if (resolvedParticipant.endsWith('@lid')) {
+                  const lidUser = resolvedParticipant
+                    .split('@')[0]
+                    .split(':')[0];
+                  resolvedParticipant =
+                    this.lidToPhoneMap[lidUser] || resolvedParticipant;
+                }
+                replyToSenderName = resolvedParticipant.split('@')[0];
+              }
+            }
+
             this.opts.onMessage(chatJid, {
               id: msg.key.id || '',
               chat_jid: chatJid,
@@ -322,6 +370,9 @@ export class WhatsAppChannel implements Channel {
               timestamp,
               is_from_me: fromMe,
               is_bot_message: isBotMessage,
+              reply_to_message_id: replyToMessageId,
+              reply_to_message_content: replyToContent,
+              reply_to_sender_name: replyToSenderName,
             });
           } else if (chatJid !== rawJid) {
             // LID translation produced a JID that doesn't match any registered group
