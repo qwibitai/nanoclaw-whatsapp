@@ -51,6 +51,20 @@ export function routeOutbound(
   return channel.sendMessage(jid, text);
 }
 
+export function routeOutboundDocument(
+  channels: Channel[],
+  jid: string,
+  base64: string,
+  mimetype: string,
+  filename: string,
+  caption?: string,
+): Promise<void> {
+  const channel = channels.find((c) => c.ownsJid(jid) && c.isConnected());
+  if (!channel) throw new Error(`No channel for JID: ${jid}`);
+  if (!channel.sendDocument) throw new Error(`Channel ${channel.name} does not support document sending`);
+  return channel.sendDocument(jid, base64, mimetype, filename, caption);
+}
+
 export function findChannel(
   channels: Channel[],
   jid: string,
