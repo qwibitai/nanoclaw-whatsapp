@@ -382,6 +382,38 @@ export class WhatsAppChannel implements Channel {
     }
   }
 
+  async sendDocument(
+    jid: string,
+    base64: string,
+    mimetype: string,
+    filename: string,
+    caption = '',
+  ): Promise<void> {
+    if (!this.connected) {
+      logger.warn({ jid, filename }, 'WA disconnected, cannot send document');
+      throw new Error('WhatsApp disconnected');
+    }
+    try {
+      const sent = await this.sock.sendMessage(jid, {
+        document: Buffer.from(base64, 'base64'),
+        mimetype,
+        fileName: filename,
+        caption,
+      });
+      if (sent?.key?.id && sent.message) {
+        this.sentMessageCache.set(sent.key.id, sent.message);
+        if (this.sentMessageCache.size > 256) {
+          const oldest = this.sentMessageCache.keys().next().value!;
+          this.sentMessageCache.delete(oldest);
+        }
+      }
+      logger.info({ jid, filename, bytes: base64.length }, 'Document sent');
+    } catch (err) {
+      logger.warn({ jid, filename, err }, 'Failed to send document');
+      throw err;
+    }
+  }
+
   isConnected(): boolean {
     return this.connected;
   }

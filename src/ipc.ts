@@ -12,6 +12,7 @@ import { RegisteredGroup } from './types.js';
 
 export interface IpcDeps {
   sendMessage: (jid: string, text: string) => Promise<void>;
+  sendDocument?: (jid: string, base64: string, mimetype: string, filename: string, caption?: string) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroups: (force: boolean) => Promise<void>;
@@ -90,6 +91,33 @@ export function startIpcWatcher(deps: IpcDeps): void {
                   logger.warn(
                     { chatJid: data.chatJid, sourceGroup },
                     'Unauthorized IPC message attempt blocked',
+                  );
+                }
+              } else if (
+                data.type === 'send_document' &&
+                data.chatJid &&
+                data.base64 &&
+                data.mimetype &&
+                data.filename
+              ) {
+                const targetGroup = registeredGroups[data.chatJid];
+                if (
+                  isMain ||
+                  (targetGroup && targetGroup.folder === sourceGroup)
+                ) {
+                  if (!deps.sendDocument) {
+                    logger.warn({ chatJid: data.chatJid }, 'sendDocument not available on this channel');
+                  } else {
+                    await deps.sendDocument(data.chatJid, data.base64, data.mimetype, data.filename, data.caption);
+                    logger.info(
+                      { chatJid: data.chatJid, filename: data.filename, sourceGroup },
+                      'IPC document sent',
+                    );
+                  }
+                } else {
+                  logger.warn(
+                    { chatJid: data.chatJid, sourceGroup },
+                    'Unauthorized IPC send_document attempt blocked',
                   );
                 }
               }
